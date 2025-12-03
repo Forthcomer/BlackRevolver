@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>黑色左轮</title>
+<style>
+body{font-family:system-ui,Segoe UI,Arial;display:flex;margin:0;height:100vh;background:#f5f6f8}
+.wrap{display:flex;flex:1}
+.map{flex:2;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(5,140px);gap:12px;padding:16px;position:relative}
+.room{background:#fff;border:2px solid #cfd3d8;border-radius:10px;display:flex;align-items:center;justify-content:center;position:relative}
+.room .name{font-weight:600}
+.room .floor{position:absolute;right:8px;top:8px;font-size:12px;color:#667;
+}
+.room.active{border-color:#1e88e5;box-shadow:0 0 0 3px rgba(30,136,229,.2)}
+.room.adj{border-color:#43a047}
+.panel{flex:1;border-left:1px solid #e1e5ea;background:#fff;display:flex;flex-direction:column}
+.panel .top{padding:14px;border-bottom:1px solid #e1e5ea}
+.panel .top .line{margin:6px 0}
+.panel .actions{padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{padding:10px 12px;border:1px solid #cfd3d8;border-radius:8px;background:#f8fafc}
+button:disabled{opacity:.5}
+.choices{padding:10px;border-top:1px dashed #e1e5ea}
+.choices h4{margin:6px 0}
+.choices .list{display:flex;flex-wrap:wrap;gap:6px}
+.log{flex:1;overflow:auto;padding:12px;background:#fafbfc;border-top:1px solid #e1e5ea}
+.tag{display:inline-block;padding:2px 6px;border-radius:6px;background:#eef2ff;color:#3b5ddd;margin-left:6px;font-size:12px}
+.hp{font-weight:700}
+.help{padding:12px;border-top:1px solid #e1e5ea;font-size:13px;color:#333}
+.help h4{margin:6px 0}
+.help ul{padding-left:18px;margin:6px 0}
+.help li{margin:4px 0}
+.helpbox{border-top:1px solid #e1e5ea}
+.helpbox>summary{list-style:none;padding:10px 12px;cursor:pointer;color:#3b5ddd}
+.helpbox>summary::-webkit-details-marker{display:none}
+.hurt{position:fixed;inset:0;background:rgba(255,0,0,.55);opacity:0;pointer-events:none;z-index:9999}
+@keyframes hurtFade{0%{opacity:.55}100%{opacity:0}}
+.hurt.show{animation:hurtFade 1s ease-out forwards}
+.turn-red{background:#fff0f0}
+.turn-blue{background:#f0f6ff}
+.tokens{position:absolute;inset:0;pointer-events:none;z-index:9998}
+.log-red{color:#d32f2f}
+.log-blue{color:#1e88e5}
+.arrow{position:absolute;width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;transition:transform .25s ease}
+.arrow.red{border-top:16px solid #e53935}
+.arrow.blue{border-top:16px solid #1e88e5}
+.firework{position:fixed;left:50%;top:50%;width:140px;height:140px;margin-left:-70px;margin-top:-70px;border-radius:50%;background:radial-gradient(circle, rgba(255,200,0,.9) 0%, rgba(255,0,0,.6) 35%, rgba(255,0,0,0) 70%);opacity:0;animation:fw .8s ease-out forwards}
+@keyframes fw{0%{opacity:1;transform:scale(.4)}100%{opacity:0;transform:scale(1.4)}}
+.over{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:10000}
+.over .box{background:#fff;border-radius:12px;padding:22px 24px;width:360px;text-align:center}
+.over h3{margin:0 0 12px;font-size:20px}
+.over button{padding:10px 14px;border:1px solid #cfd3d8;border-radius:8px;background:#f8fafc}
+.effect{position:fixed;inset:0;pointer-events:none;z-index:10000}
+.effect.wave{background:radial-gradient(circle at 50% 50%, rgba(0,153,255,.35) 0%, rgba(0,153,255,.15) 60%, rgba(0,153,255,0) 80%);animation:waveMove 1s linear forwards}
+@keyframes waveMove{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.2)}}
+.effect.brown{background:rgba(139,69,19,.35);animation:brownFade 1s ease-out forwards}
+@keyframes brownFade{0%{opacity:.8}100%{opacity:0}}
+.hitText{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:48px;color:#d32f2f;font-weight:800;z-index:10001;animation:hitBlink 1s ease-in-out}
+@keyframes hitBlink{0%,50%,100%{opacity:1}25%,75%{opacity:0}}
+.missText{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:48px;color:#1e88e5;font-weight:800;z-index:10001;animation:missFade 1s ease-out forwards}
+@keyframes missFade{0%{opacity:1}100%{opacity:0}}
+.start{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+.start .box{background:#fff;border-radius:12px;padding:20px;width:520px}
+.start h3{margin:0 0 10px}
+.start .list{display:flex;flex-wrap:wrap;gap:8px}
+.start .list button{flex:1}
+.marker{position:absolute}
+.marker.square{width:12px;height:12px;border-radius:2px}
+.marker.square.red{background:#e53935}
+.marker.square.blue{background:#1e88e5}
+</style>
+<style>
+.logbar{position:fixed;left:0;right:0;bottom:0;height:40vh;background:#fff;border-top:1px solid #e1e5ea;box-shadow:0 -6px 12px rgba(0,0,0,.1);transform:translateY(100%);transition:transform .25s ease;z-index:12000;display:flex;flex-direction:column}
+.logbar.show{transform:translateY(0)}
+.logbar .head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #e1e5ea}
+.logbar .content{flex:1;overflow:auto;padding:10px}
+.logbar .head button{padding:6px 10px;border:1px solid #cfd3d8;border-radius:8px;background:#f8fafc}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="map" id="map"></div>
+  <div class="panel">
+    <div class="top" id="top"></div>
+    <div class="actions">
+      <button id="btn-move">移动</button>
+      <button id="btn-shoot">开枪</button>
+      <button id="btn-listen">聆听</button>
+      <button id="btn-echo">回声</button>
+      <button id="btn-inspire">振奋</button>
+      <button id="btn-control">控制面板</button>
+      <button id="btn-plant">安装地雷</button>
+      <button id="btn-detonate">引爆地雷</button>
+      <button id="btn-cheat">作弊模式</button>
+      <button id="btn-flood">水淹地下室</button>
+      <button id="btn-rail">跳过栏杆</button>
+      <button id="btn-trapdoor">地板门开关</button>
+      <button id="btn-home">返回主页</button>
+      <button id="btn-logbar">日志通知栏</button>
+      <button id="btn-end">结束回合</button>
+    </div>    <div class="choices" id="choices"></div>
+    <details id="help-box" class="helpbox"><summary id="help-summary">技能与行动说明</summary><div class="help" id="help"></div></details>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+<div class="start" id="start">
+  <div class="box">
+    <h3 id="start-title">选择你的出生位置</h3>
+    <div class="list" id="start-list"></div>
+  </div>
+</div>
+<div class="hurt" id="hurt"></div>
+<div class="over" id="over"><div class="box"><h3 id="over-text"></h3><div style="display:flex;gap:8px;justify-content:center"><button id="over-home">回到主页</button><button id="over-view">观看游戏日志</button></div></div></div>
+<div class="tokens" id="tokens"><div class="arrow red" id="arrowA"></div><div class="arrow blue" id="arrowB"></div></div>
+<div class="logbar" id="logbar"><div class="head"><div>游戏日志</div><button id="logbar-close">关闭</button></div><div class="content" id="logbar-content"></div></div>
+<script>
+const params=new URLSearchParams(location.search)
+const MODE=params.get('mode')||'ai'
+const rooms=["卧室","大厅","图书馆","阳台","厨房","餐厅","客厅","地下室"]
+const floors={"二楼":new Set(["卧室","大厅","图书馆","阳台"]),"一楼":new Set(["厨房","餐厅","客厅","地下室"])}
+const adj={
+  "地下室":new Set(["餐厅","客厅","图书馆"]),
+  "餐厅":new Set(["厨房","客厅","地下室"]),
+  "客厅":new Set(["厨房","餐厅","地下室","阳台"]),
+  "厨房":new Set(["卧室","餐厅","客厅"]),
+  "卧室":new Set(["厨房","大厅"]),
+  "大厅":new Set(["卧室","图书馆","阳台"]),
+  "图书馆":new Set(["地下室","大厅"]),
+  "阳台":new Set(["大厅","客厅"]) 
+}
+const state={mode:MODE}
+function rnd(a){return a[Math.floor(Math.random()*a.length)]}
+function init(){
+  state.players= state.mode==='pvp' ?
+   [{name:"玩家A",hp:2,pos:null,ap:0,mines:[],minesFresh:[],pendingControl:null},{name:"玩家B",hp:2,pos:null,ap:0,mines:[],minesFresh:[],pendingControl:null}] :
+   [{name:"玩家",hp:2,pos:null,ap:0,mines:[],minesFresh:[],pendingControl:null},{name:"电脑",hp:2,pos:rnd(rooms),ap:0,mines:[],minesFresh:[],pendingControl:null}]
+  state.turn=0
+  state.awaitForced=false
+  state.actionStarted=false
+  state.started=false
+  state.aiTurnCount=0
+  state.aiKnownPos=null
+  state.cheat=false
+  state.round=0
+  state.logs=[]
+  state.basementLock={active:false,owner:null}
+  renderMap()
+  showStart()
+}
+function isTwoFloor(r){return floors["二楼"].has(r)}
+function isOneFloor(r){return floors["一楼"].has(r)}
+function actorClass(n){if(state.mode==='pvp'){return n.includes('A')?'log-red':'log-blue'}return n==='电脑'?'log-blue':'log-red'}
+function log(t){const who=current().name;const cls=actorClass(who);const d=new Date();const ts=d.toLocaleTimeString('zh-CN',{hour12:false});const entry=`[${ts}][回合${state.round}] ${t}`;state.logs.push({ts,round:state.round,who,text:t});const el=document.getElementById('log');const p=document.createElement('div');p.className=cls;p.textContent=entry;el.appendChild(p);el.scrollTop=el.scrollHeight;const bar=document.getElementById('logbar');if(bar&&bar.classList.contains('show'))renderLogbar()}
+function renderLogbar(){const c=document.getElementById('logbar-content');if(!c)return;c.innerHTML='';state.logs.forEach(e=>{const d=document.createElement('div');d.className=actorClass(e.who);d.textContent=`[${e.ts}][回合${e.round}] ${e.who}: ${e.text}`;c.appendChild(d)});c.scrollTop=c.scrollHeight}
+function setLogForTurn(){const el=document.getElementById('log');el.innerHTML=''}
+function renderMap(){const m=document.getElementById("map");m.innerHTML="";const layoutPos={"卧室":[1,1],"大厅":[1,2],"图书馆":[1,3],"阳台":[2,2],"厨房":[3,1],"餐厅":[4,1],"客厅":[4,2],"地下室":[5,1]};rooms.forEach(r=>{const d=document.createElement("div");d.className="room";d.dataset.room=r;const isPlayerTurn=state.started&&current().name!=="电脑";if(isPlayerTurn&&current().pos===r)d.classList.add("active");if(isPlayerTurn&&adj[current().pos]&&adj[current().pos].has(r))d.classList.add("adj");const n=document.createElement("div");n.className="name";n.textContent=r;const f=document.createElement("div");f.className="floor";f.textContent=floors["二楼"].has(r)?"二楼":"一楼";d.appendChild(n);d.appendChild(f);const [row,col]=layoutPos[r];d.style.gridRow=row;d.style.gridColumn=r==="地下室"?"1 / span 3":col;const viewer= state.mode==='ai' ? state.players[0] : current();const showAll=state.cheat===true;const colorOf=u=>{if(state.mode==='pvp'){return u.name.includes('A')?'red':'blue'}return u.name==='电脑'?'blue':'red'};let idx=0;state.players.forEach(u=>{const allowed=showAll||u===viewer;const ownsMine=u.mines.some(v=>v===r);const ownsCtrl=u.pendingControl&&u.pendingControl.room===r;const col=colorOf(u);if(allowed&&ownsMine){const mk=document.createElement('div');mk.className='marker square '+col+' mine';mk.style.right=(8+16*idx)+'px';mk.style.bottom='8px';d.appendChild(mk);idx++}if(allowed&&ownsCtrl){const mk=document.createElement('div');mk.className='marker square '+col+' ctrl';mk.style.right=(8+16*idx)+'px';mk.style.bottom='8px';d.appendChild(mk);idx++}});m.appendChild(d)})}
+function mapBounds(){return document.getElementById('map').getBoundingClientRect()}
+function roomCenter(room){const el=[...document.querySelectorAll('.room')].find(x=>x.dataset.room===room);if(!el)return {x:0,y:0};const r=el.getBoundingClientRect();const m=mapBounds();return {x:r.left-m.left+r.width/2,y:r.top-m.top+6}
+}
+function ensureArrows(){const a=document.getElementById('arrowA'),b=document.getElementById('arrowB');a.style.transform='translate(-1000px,-1000px)';b.style.transform='translate(-1000px,-1000px)'}
+function updateArrows(){const a=document.getElementById('arrowA'),b=document.getElementById('arrowB');if(!state.started){ensureArrows();return}const p=current(),o=other();const pc=roomCenter(p.pos);let ax=pc.x-10,ay=pc.y-20;let bx=-1000,by=-1000;const showOther = state.cheat===true; if(showOther){const oc=roomCenter(o.pos);bx=oc.x-10;by=oc.y-20}
+  if(showOther&&p.pos===o.pos){ax-=12;bx+=12}
+  a.style.transform=`translate(${ax}px,${ay}px)`;b.style.transform=`translate(${bx}px,${by}px)`;
+  if(p.name.includes('A')||state.mode!=='pvp'){a.classList.add('red');a.classList.remove('blue');b.classList.add('blue');b.classList.remove('red')}else{a.classList.add('blue');a.classList.remove('red');b.classList.add('red');b.classList.remove('blue')}}
+function current(){return state.players[state.turn]}
+function other(){return state.players[1-state.turn]}
+function setTop(){const t=document.getElementById("top");t.innerHTML="";const c=current();const o=other();const a=document.createElement("div");a.className="line";a.innerHTML=c.name+" 位置："+c.pos+" AP："+c.ap+" "+"<span class=hp>HP:"+c.hp+"</span>"+"<span class=tag>当前</span>";const b=document.createElement("div");b.className="line";b.innerHTML=o.name+" 位置：? "+" AP：? "+" <span class=hp>HP:"+o.hp+"</span>";t.appendChild(a);t.appendChild(b);document.body.classList.toggle('turn-red',c.name.includes('A'));document.body.classList.toggle('turn-blue',c.name.includes('B'))}
+function refresh(){renderMap();setTop();renderHelp();updateArrows();syncButtons()}
+function beginTurn(){
+  const p=current();
+  state.round+=1;
+  p.ap=2;
+  state.actionStarted=false;
+  if(Array.isArray(p.minesFresh)) p.minesFresh=[];
+  refresh();
+  if(state.basementLock.active&&state.basementLock.owner===state.turn){state.basementLock.active=false;log("地下室恢复可移动")}
+  if(p.pendingControl&&typeof p.pendingControl==="object"){p.pendingControl.delay=Math.max(0,p.pendingControl.delay-1);if(p.pendingControl.delay===0){const target=p.pendingControl.room;let hit=false;playSound('explosion');log(p.name+" 控制面板爆炸："+target);state.players.forEach(u=>{if(u.pos===target){u.hp-=1;hit=true;hitEffectFor(u);showHit();log("命中！"+u.name+" 在 "+target+" 受到1点伤害")}});if(!hit){showMiss();log("未命中！")};p.pendingControl=null}}
+  if(checkWin())return;
+  if(p.name==="电脑"){
+    aiTurn();
+  }
+}
+function endTurn(){if(checkWin())return;state.awaitForced=false;state.turn=1-state.turn;beginTurn()}
+function checkWin(){const a=state.players[0],b=state.players[1];if(a.hp<=0||b.hp<=0){const over=document.getElementById("over");const txt=document.getElementById("over-text");if(a.hp<=0){txt.textContent="你输了！";playSound('defeat')}else{txt.textContent="你赢了！";playSound('victory')}over.style.display="flex";disableAll();return true}return false}
+function disableAll(){["btn-move","btn-shoot","btn-listen","btn-echo","btn-inspire","btn-control","btn-plant","btn-detonate","btn-end"].forEach(id=>{document.getElementById(id).disabled=true});document.getElementById("choices").innerHTML=""}
+function syncButtons(){const p=current();const choices=document.getElementById("choices");choices.innerHTML="";if(!state.started){["btn-move","btn-shoot","btn-listen","btn-echo","btn-inspire","btn-control","btn-plant","btn-detonate"].forEach(id=>{document.getElementById(id).disabled=true});document.getElementById("btn-end").disabled=true;return}if(p.name==="电脑"){["btn-move","btn-shoot","btn-listen","btn-echo","btn-inspire","btn-control","btn-plant","btn-detonate","btn-end","btn-flood","btn-rail","btn-trapdoor"].forEach(id=>{document.getElementById(id).disabled=true});return}const inLiving=p.pos==="客厅";const inKitchen=p.pos==="厨房";const inBasement=p.pos==="地下室";document.getElementById("btn-move").disabled=state.awaitForced?false:(p.ap<1)
+  document.getElementById("btn-shoot").disabled=p.ap<1?true:false
+  document.getElementById("btn-listen").disabled=p.ap<1?true:false
+  document.getElementById("btn-echo").disabled=!inLiving
+  document.getElementById("btn-inspire").disabled=!(inKitchen&&!state.actionStarted)
+  document.getElementById("btn-control").disabled=!(inBasement&&p.ap>=1)
+  document.getElementById("btn-plant").disabled=!(p.ap>=1)
+  const detCount=(p.mines||[]).filter(r=>!(p.minesFresh||[]).includes(r)).length;
+  document.getElementById("btn-detonate").disabled=!(p.ap>=1&&detCount>0)
+  document.getElementById("btn-flood").disabled=!(p.pos==="卧室"&&p.ap>=1)
+  document.getElementById("btn-rail").disabled=!(p.pos==="阳台")
+  document.getElementById("btn-trapdoor").disabled=!(p.pos==="图书馆"&&p.ap>=1)
+  document.getElementById("btn-end").disabled=false}
+function neighbors(r){return Array.from(adj[r]||[])}
+function shootTargets(pos){const s=new Set([pos,...neighbors(pos)]);if(pos==="阳台"){s.add("客厅");s.add("厨房");s.add("餐厅")}return Array.from(s)}
+function moveTo(p,to,forced=false){if(!forced){if(state.basementLock.active&&(p.pos==="地下室"||to==="地下室")){log("地下室已被封锁，无法移动");return false}}if(!forced){if(!adj[p.pos]||!adj[p.pos].has(to)){log("非法移动：不可达");return false}}p.pos=to;playSound('step');refresh();return true}
+function forceMoveRandom(victim){const opts=neighbors(victim.pos).filter(r=>r!=="地下室");if(opts.length===0)return false;const to=opts[Math.floor(Math.random()*opts.length)];return moveTo(victim,to,true)}
+function handleMove(){const p=current();const n=neighbors(p.pos);if(n.length===0)return;const box=document.getElementById("choices");box.innerHTML="";const h=document.createElement("h4");h.textContent=state.awaitForced?"选择强制移动目的地":"选择移动目的地";box.appendChild(h);const list=document.createElement("div");list.className="list";n.forEach(r=>{const b=document.createElement("button");b.textContent=r;b.onclick=()=>{if(moveTo(p,r)){if(state.awaitForced){state.awaitForced=false;syncButtons();}else{p.ap-=1;state.actionStarted=true}log(p.name+" 移动到 "+r);if(checkWin())return;if(p.name!=="电脑"&&p.ap===0)syncButtons();if(p.name==="电脑"){aiContinue()}else refresh()} };list.appendChild(b)});box.appendChild(list)}
+function handleShoot(){const p=current();const opts=shootTargets(p.pos);const box=document.getElementById("choices");box.innerHTML="";const h=document.createElement("h4");h.textContent="选择射击房间";box.appendChild(h);const list=document.createElement("div");list.className="list";opts.forEach(r=>{const b=document.createElement("button");b.textContent=r;b.onclick=()=>{playSound('gun');p.ap=0;state.actionStarted=true;if(other().pos===r){other().hp-=1;showHit();log("命中！对方在 "+r)}else{showMiss();log(p.name+" 射击 "+r+" 未命中")};state.awaitForced=true;refresh();handleMove()};list.appendChild(b)});box.appendChild(list)}
+function handleListen(){const p=current();if(p.ap<1){return}playSound('bell');const e=other();const cand=neighbors(e.pos);if(cand.length===0){log("聆听失败");return}const info=rnd(cand);log("聆听结果："+info);p.ap-=1;state.actionStarted=true;refresh();if(p.name==="电脑"){aiContinue()}}
+function handleEcho(){const p=current();if(p.pos!=="客厅"){log("只能在客厅使用回声");return}playSound('bell');const e=other();if(isTwoFloor(e.pos)){log("回声：敌人在 "+e.pos)}else{const info=rnd(neighbors(e.pos));log("回声："+info)}refresh();if(p.name==="电脑"){aiContinue()}}
+function handleInspire(){const p=current();if(!(p.pos==="厨房"&&!state.actionStarted)){log("振奋只能在回合开始使用");return}p.ap+=1;log(p.name+" 使用振奋，AP+1");refresh();if(p.name==="电脑"){aiContinue()}}
+function handleFloodBasement(){const p=current();if(!(p.pos==="卧室"&&p.ap>=1))return;p.ap-=1;state.basementLock={active:true,owner:state.turn};log(p.name+" 使用 水淹地下室");playSound('water');effect('wave');const foe=other();if(foe.pos==="地下室"){foe.hp-=1;hitEffectFor(foe);showHit();log("命中！");forceMoveRandom(foe)}else{showMiss();log("未命中！")}refresh();if(p.name==="电脑"){aiContinue()}}
+function handleJumpRailing(){const p=current();if(p.pos!=="阳台")return;log(p.name+" 使用 跳过栏杆");moveTo(p,"厨房",true);refresh();if(p.name==="电脑"){aiContinue()}}
+function handleTrapdoor(){const p=current();if(!(p.pos==="图书馆"&&p.ap>=1))return;p.ap-=1;log(p.name+" 使用 地板门开关");playSound('creak');effect('brown');const victims=state.players.filter(x=>x.pos==="厨房");if(victims.length===0){showMiss();log("未命中！");refresh();if(p.name==="电脑"){aiContinue()}return}victims.forEach(v=>{moveTo(v,"地下室",true);if(state.basementLock.active){v.hp-=1;hitEffectFor(v);showHit();log("命中！");forceMoveRandom(v)}});refresh();if(p.name==="电脑"){aiContinue()}}
+function handleControl(){const p=current();if(!(p.pos==="地下室"&&p.ap>=1)){return}const box=document.getElementById("choices");box.innerHTML="";const h=document.createElement("h4");h.textContent="选择控制面板目标房间";box.appendChild(h);const list=document.createElement("div");list.className="list";rooms.forEach(r=>{const b=document.createElement("button");b.textContent=r;b.onclick=()=>{p.ap-=1;p.pendingControl={room:r,delay:1};log(p.name+" 控制面板设定为 "+r+"（下回合爆炸）");refresh();if(p.name==="电脑"){aiContinue()}};list.appendChild(b)});box.appendChild(list)}
+function handlePlant(){const p=current();if(!(p.ap>=1))return;if(p.mines.length>=2){log("你的地雷数量已达上限");return}p.ap-=1;p.mines.push(p.pos);if(Array.isArray(p.minesFresh))p.minesFresh.push(p.pos);playSound('plant');log(p.name+" 在 "+p.pos+" 安装地雷");refresh();if(p.name==="电脑"){aiContinue()}}
+function handleDetonate(){const p=current();const available=(p.mines||[]).filter(r=>!(p.minesFresh||[]).includes(r));if(!(p.ap>=1&&available.length>0))return;const box=document.getElementById("choices");box.innerHTML="";const h=document.createElement("h4");h.textContent="选择要引爆的地雷";box.appendChild(h);const list=document.createElement("div");list.className="list";available.forEach((r)=>{const b=document.createElement("button");b.textContent=r;b.onclick=()=>{p.ap-=1;playSound('explosion');const target=r;const foe=other();const idx=p.mines.indexOf(r);if(foe.pos===target){foe.hp-=1;hitEffectFor(foe);log("引爆地雷命中！ "+target)}else{log("引爆地雷："+target+" 处无人命中")};if(idx>=0)p.mines.splice(idx,1);refresh();if(p.name==="电脑"){aiContinue()}};list.appendChild(b)});box.appendChild(list)}
+function handleEnd(){log(current().name+" 结束回合");endTurn()}
+function dist(a,b){if(a===b)return 0;const q=[a];const seen=new Set([a]);let d=0;while(q.length){let size=q.length;while(size--){const x=q.shift();for(const y of adj[x]){if(!seen.has(y)){if(y===b)return d+1;seen.add(y);q.push(y)}}}d++}return 99}
+function bfsNext(from,to){if(from===to)return null;const q=[from];const seen=new Set([from]);const parent={};while(q.length){const x=q.shift();for(const y of adj[x]){if(!seen.has(y)){parent[y]=x;seen.add(y);q.push(y);if(y===to){let cur=y;let prev=null;while(parent[cur]!==from){cur=parent[cur]}prev=cur;return prev}}}}return null}
+function aiTurn(){const p=current();state.aiTurnCount++;state.aiKnownPos=null;if(state.aiTurnCount%5===0){state.aiKnownPos=other().pos}refresh();if(p.pos==="厨房"&&!state.actionStarted){handleInspire()}aiContinue()}
+function aiContinue(){const p=current();if(checkWin())return;if(p.ap<=0&&!state.awaitForced){handleEnd();return}if(state.awaitForced){const cand=neighbors(p.pos);let best=cand[0];let bd=-1;cand.forEach(r=>{const dd=state.aiKnownPos?dist(r,state.aiKnownPos):Math.random();if(dd>bd){bd=dd;best=r}});moveTo(p,best);state.awaitForced=false;syncButtons();aiContinue();return}
+  const target=state.aiKnownPos;const inRange=target?shootTargets(p.pos).includes(target):false;if(inRange&&p.ap>=1){p.ap=0;state.actionStarted=true;playSound('gun');log("电脑朝 "+target+" 开枪");if(target===p.pos||neighbors(p.pos).includes(target)|| (p.pos==="阳台"&&["客厅","厨房","餐厅"].includes(target))){const foe=other();foe.hp-=1;hitEffectFor(foe);showHit();log("命中！电脑击中玩家")}else{showMiss();log("电脑开枪未命中")}
+    state.awaitForced=true;syncButtons();const cand=neighbors(p.pos);let best=cand[0];let bd=-1;cand.forEach(r=>{const dd=target?dist(r,target):Math.random();if(dd>bd){bd=dd;best=r}});moveTo(p,best);state.awaitForced=false;syncButtons();aiContinue();return}
+  if(p.ap>=1){const r=Math.random();const avail=(p.mines||[]).filter(x=>!(p.minesFresh||[]).includes(x));if(avail.length>0&&r<0.33){const i=Math.floor(Math.random()*avail.length);const targetRoom=avail[i];p.ap-=1;playSound('explosion');const foe=other();if(foe.pos===targetRoom){foe.hp-=1;hitEffectFor(foe);showHit();log("引爆地雷命中！ "+targetRoom)}else{showMiss();log("引爆地雷："+targetRoom+" 处无人命中")}const idx=p.mines.indexOf(targetRoom);if(idx>=0)p.mines.splice(idx,1);refresh();aiContinue();return}else if(r<0.66){if(p.pos==="地下室"){p.ap-=1;p.pendingControl={room:rnd(rooms),delay:1};log("电脑设置控制面板："+p.pendingControl.room+"（下回合爆炸）");refresh();aiContinue();return}else{if(p.mines.length>=2){log("电脑地雷数量已达上限");refresh();aiContinue();return}p.ap-=1;p.mines.push(p.pos);if(Array.isArray(p.minesFresh))p.minesFresh.push(p.pos);playSound('plant');log("电脑安装地雷");refresh();aiContinue();return}}else{if(p.mines.length>=2){log("电脑地雷数量已达上限");refresh();aiContinue();return}p.ap-=1;p.mines.push(p.pos);if(Array.isArray(p.minesFresh))p.minesFresh.push(p.pos);playSound('plant');log("电脑安装地雷");refresh();aiContinue();return}}
+  const next=target?bfsNext(p.pos,target):rnd(neighbors(p.pos));if(next&&p.ap>=1){p.ap-=1;state.actionStarted=true;moveTo(p,next);log("电脑移动");aiContinue();return}
+  handleEnd()}
+document.getElementById("btn-move").onclick=()=>{handleMove()}
+document.getElementById("btn-shoot").onclick=()=>{handleShoot()}
+document.getElementById("btn-listen").onclick=()=>{handleListen()}
+document.getElementById("btn-echo").onclick=()=>{handleEcho()}
+document.getElementById("btn-inspire").onclick=()=>{handleInspire()}
+document.getElementById("btn-control").onclick=()=>{handleControl()}
+document.getElementById("btn-plant").onclick=()=>{handlePlant()}
+document.getElementById("btn-detonate").onclick=()=>{handleDetonate()}
+document.getElementById("btn-flood").onclick=()=>{handleFloodBasement()}
+document.getElementById("btn-rail").onclick=()=>{handleJumpRailing()}
+document.getElementById("btn-trapdoor").onclick=()=>{handleTrapdoor()}
+document.getElementById("btn-cheat").onclick=()=>{state.cheat=!state.cheat;const msg= state.mode==='pvp' ? (state.cheat?"作弊模式：显示对手位置":"作弊模式：隐藏对手位置") : (state.cheat?"作弊模式：显示电脑位置":"作弊模式：隐藏电脑位置");log(msg);refresh()}
+document.getElementById("btn-logbar").onclick=()=>{const bar=document.getElementById('logbar');if(bar){bar.classList.add('show');renderLogbar()}}
+document.getElementById("btn-home").onclick=()=>{location.href='index.html'}
+document.getElementById("btn-end").onclick=()=>{handleEnd()}
+document.addEventListener('keydown',e=>{const p=current();if(!state.started||p.name==="电脑")return;if(e.target&&(['INPUT','TEXTAREA'].includes(e.target.tagName)))return;const mapKey=(k,id)=>{if(e.key.toLowerCase()===k){const b=document.getElementById(id);if(b&&!b.disabled){b.click();e.preventDefault()}}};mapKey('m','btn-move');mapKey('f','btn-shoot');mapKey('l','btn-listen');mapKey('e','btn-echo');mapKey('i','btn-inspire');mapKey('c','btn-control');mapKey('p','btn-plant');mapKey('d','btn-detonate');mapKey('b','btn-flood');mapKey('j','btn-rail');mapKey('t','btn-trapdoor');if(e.key==='Enter'){const b=document.getElementById('btn-end');if(b&&!b.disabled){b.click();e.preventDefault()}}const list=[...document.querySelectorAll('#choices .list button')];if(list.length>0){const num=parseInt(e.key,10);if(!isNaN(num)&&num>=1&&num<=list.length){list[num-1].click();e.preventDefault()}}})
+function wireHelpBox(){const box=document.getElementById('help-box');const summary=document.getElementById('help-summary');if(!box)return;const saved=localStorage.getItem('helpOpen');if(saved!==null)box.open=saved==='1';summary.addEventListener('click',e=>{e.preventDefault();box.open=!box.open});box.addEventListener('toggle',()=>{localStorage.setItem('helpOpen',box.open?'1':'0')})}
+function showStart(){const box=document.getElementById("start");const list=document.getElementById("start-list");list.innerHTML="";if(state.mode==='pvp'){let selecting=0;const title=document.getElementById('start-title');const render=()=>{list.innerHTML="";title.textContent= selecting===0?"玩家A选择出生位置":"玩家B选择出生位置";document.body.classList.toggle('turn-red',selecting===0);document.body.classList.toggle('turn-blue',selecting===1);rooms.forEach(r=>{const b=document.createElement("button");b.textContent=r;b.onclick=()=>{if(selecting===0){state.players[0].pos=r;selecting=1;render()}else{if(r===state.players[0].pos){return}state.players[1].pos=r;state.started=true;document.body.classList.remove('turn-red');document.body.classList.remove('turn-blue');box.style.display="none";log("双方已就位，"+state.players[0].name+" 与 "+state.players[1].name);beginTurn()}};list.appendChild(b)});};render();}else{rooms.forEach(r=>{const b=document.createElement("button");b.textContent=r;b.onclick=()=>{state.players[0].pos=r;let rp=rnd(rooms);while(rp===r){rp=rnd(rooms)}state.players[1].pos=rp;state.started=true;box.style.display="none";log("玩家出生在 "+r+"；电脑已就位");beginTurn()};list.appendChild(b)})}syncButtons()}
+function flashHurt(){const o=document.getElementById("hurt");o.classList.add("show");setTimeout(()=>{o.classList.remove("show")},1000)}
+function firework(){const e=document.createElement('div');e.className='firework';document.body.appendChild(e);setTimeout(()=>{e.remove()},900)}
+function hitEffectFor(target){if(target===current())flashHurt();else firework()}
+function effect(type){const e=document.createElement('div');e.className='effect '+type;document.body.appendChild(e);setTimeout(()=>{e.remove()},1000)}
+function showHit(){const t=document.createElement('div');t.className='hitText';t.textContent='命中';document.body.appendChild(t);setTimeout(()=>{t.remove()},1000)}
+function showMiss(){const t=document.createElement('div');t.className='missText';t.textContent='未命中';document.body.appendChild(t);setTimeout(()=>{t.remove()},1000)}
+let audioCtx=null
+function ensureAudio(){if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();return audioCtx}
+function createNoiseBuffer(ctx,dur){const rate=ctx.sampleRate;const len=Math.floor(rate*dur);const buffer=ctx.createBuffer(1,len,rate);const data=buffer.getChannelData(0);for(let i=0;i<len;i++){data[i]=Math.random()*2-1}return buffer}
+function playSound(type){const ctx=ensureAudio();let dur=type==='victory'?5:type==='defeat'?4:(type==='bell'?3:2);if(type==='gun'){const src=ctx.createBufferSource();src.buffer=createNoiseBuffer(ctx,dur);const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=800;const g=ctx.createGain();g.gain.setValueAtTime(0,ctx.currentTime);g.gain.linearRampToValueAtTime(1,ctx.currentTime+0.05);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);src.connect(hp);hp.connect(g);g.connect(ctx.destination);src.start();src.stop(ctx.currentTime+dur)}else if(type==='explosion'){const src=ctx.createBufferSource();src.buffer=createNoiseBuffer(ctx,dur);const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.setValueAtTime(1200,ctx.currentTime);lp.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+dur);const g=ctx.createGain();g.gain.setValueAtTime(1,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);src.connect(lp);lp.connect(g);g.connect(ctx.destination);src.start();src.stop(ctx.currentTime+dur)}else if(type==='water'){const src=ctx.createBufferSource();src.buffer=createNoiseBuffer(ctx,dur);const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=300;bp.Q.value=0.6;const g=ctx.createGain();g.gain.setValueAtTime(0.6,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);src.connect(bp);bp.connect(g);g.connect(ctx.destination);src.start();src.stop(ctx.currentTime+dur)}else if(type==='creak'){const osc=ctx.createOscillator();osc.type='triangle';osc.frequency.setValueAtTime(400,ctx.currentTime);osc.frequency.linearRampToValueAtTime(120,ctx.currentTime+dur);const g=ctx.createGain();g.gain.setValueAtTime(0,ctx.currentTime);g.gain.linearRampToValueAtTime(0.8,ctx.currentTime+0.2);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);osc.connect(g);g.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+dur)}else if(type==='step'){const src=ctx.createBufferSource();src.buffer=createNoiseBuffer(ctx,dur);const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=180;bp.Q.value=0.8;const g=ctx.createGain();g.gain.setValueAtTime(0.7,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);src.connect(bp);bp.connect(g);g.connect(ctx.destination);src.start();src.stop(ctx.currentTime+dur)}else if(type==='victory'){const g=ctx.createGain();g.gain.setValueAtTime(0,ctx.currentTime);g.gain.linearRampToValueAtTime(0.9,ctx.currentTime+0.4);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);const o1=ctx.createOscillator();o1.type='sawtooth';o1.frequency.setValueAtTime(440,ctx.currentTime);o1.frequency.linearRampToValueAtTime(660,ctx.currentTime+2.5);const o2=ctx.createOscillator();o2.type='square';o2.frequency.setValueAtTime(550,ctx.currentTime);o2.frequency.linearRampToValueAtTime(825,ctx.currentTime+2.5);o1.connect(g);o2.connect(g);g.connect(ctx.destination);o1.start();o2.start();o1.stop(ctx.currentTime+dur);o2.stop(ctx.currentTime+dur)}else if(type==='defeat'){const g=ctx.createGain();g.gain.setValueAtTime(0.8,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);const o=ctx.createOscillator();o.type='sine';o.frequency.setValueAtTime(320,ctx.currentTime);o.frequency.linearRampToValueAtTime(120,ctx.currentTime+dur);o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+dur)}else if(type==='plant'){if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance('The bomb has been placed');u.lang='en-US';u.rate=1.05;u.pitch=0.95;u.volume=1;window.speechSynthesis.cancel();window.speechSynthesis.speak(u)}else{const osc=ctx.createOscillator();osc.type='square';const g=ctx.createGain();g.gain.setValueAtTime(0.8,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);osc.connect(g);g.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+dur)}}else if(type==='bell'){const o=ctx.createOscillator();o.type='sine';o.frequency.setValueAtTime(880,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(660,ctx.currentTime+1.5);const g=ctx.createGain();g.gain.setValueAtTime(0,ctx.currentTime);g.gain.linearRampToValueAtTime(0.9,ctx.currentTime+0.1);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+dur);o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+dur)}}
+function renderHelp(){const h=document.getElementById("help");h.innerHTML=`
+  <h4>技能与行动说明</h4>
+  <ul>
+    <li>移动：1AP，仅能到相邻且有通道的房间</li>
+    <li>开枪：消耗全部AP，可射击当前房间与相邻房间；若命中显示“命中！”，随后强制移动一步（0AP，受地下室封锁限制）</li>
+    <li>聆听：1AP，返回对手可移动到的相邻房间之一</li>
+    <li>回声（客厅，0AP）：若敌在二楼，报告准确房间；若在一楼，效果同聆听</li>
+    <li>振奋（厨房，0AP）：仅在本回合开始且尚未行动时使用，本回合+1AP</li>
+    <li>控制面板（地下室，1AP）：选择任意房间，于使用者下回合开始时结算，对位于该房间的玩家造成1点生命</li>
+    <li>安装地雷（1AP）：在当前位置安装地雷，最多2枚</li>
+    <li>引爆地雷（1AP）：选择已安装地雷，对该房间的玩家造成1点生命，地雷移除</li>
+    <li>水淹地下室（卧室，1AP）：若地下室有人则造成1伤害并强制其立即移动；直到使用者下一次回合开始前，地下室禁止移动</li>
+    <li>跳过栏杆（阳台，0AP）：直接移动到厨房（单向）</li>
+    <li>地板门开关（图书馆，1AP）：将厨房玩家移至地下室；若地下室处于淹水锁定则该玩家再受1伤害并再次强制移动</li>
+  </ul>
+  <div>快捷键：M移动 F开枪 L聆听 E回声 I振奋 C控制 P安装 D引爆 B水淹 J跳栏 T地板门 Enter结束</div>
+  `}
+wireHelpBox()
+const btnHome=document.getElementById("over-home");if(btnHome)btnHome.onclick=()=>{location.href='index.html'}
+const btnView=document.getElementById("over-view");if(btnView)btnView.onclick=()=>{document.getElementById('over').style.display='none';const hb=document.getElementById('help-box');if(hb)hb.open=false}
+const lbClose=document.getElementById('logbar-close');if(lbClose)lbClose.onclick=()=>{const bar=document.getElementById('logbar');if(bar)bar.classList.remove('show')}
+init()
+</script>
+</body>
+</html>
